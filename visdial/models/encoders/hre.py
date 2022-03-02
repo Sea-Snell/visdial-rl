@@ -154,6 +154,7 @@ class Encoder(nn.Module):
             ans, ansLens = self.processSequence(ans, ansLens)
             self.answerTokens.append(ans)
             self.answerLengths.append(ansLens)
+        
 
     def processSequence(self, seq, seqLen):
         ''' Strip <START> and <END> token from a left-aligned sequence'''

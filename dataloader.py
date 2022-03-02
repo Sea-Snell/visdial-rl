@@ -376,5 +376,4 @@ class VisDialDataset(Dataset):
             # item['img_fname'] = self.data[dtype + '_img_fnames'][idx]
             if dtype + '_img_labels' in self.data:
                 item['img_label'] = self.data[dtype + '_img_labels'][idx]
-
         return item

@@ -61,7 +61,7 @@ class Decoder(nn.Module):
             outputs, _ = self.rnn(inputSeq, encStates)
             outputs = F.dropout(outputs, self.dropout, training=self.training)
             outputSize = outputs.size()
-            flatOutputs = outputs.view(-1, outputSize[2])
+            flatOutputs = outputs.contiguous().view(-1, outputSize[2])
             flatScores = self.outNet(flatOutputs)
             flatLogProbs = self.logSoftmax(flatScores)
             logProbs = flatLogProbs.view(outputSize[0], outputSize[1], -1)

@@ -84,7 +84,7 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
         predFeatures = qBot.predictImage()
         # Evaluating round 0 feature regression network
         featLoss = F.mse_loss(predFeatures, gtFeatures)
-        featLossAll[0].append(torch.mean(featLoss))
+        featLossAll[0].append(torch.mean(featLoss).detach().cpu().unsqueeze(0))
         # Keeping round 0 predictions
         roundwiseFeaturePreds[0].append(predFeatures)
         for round in range(numRounds):
@@ -98,13 +98,13 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
             # Evaluating logProbs for cross entropy
             logProbsAll[round].append(
                 utils.maskedNll(logProbsCurrent,
-                                gtQuestions[:, round].contiguous()))
+                                gtQuestions[:, round].contiguous()).unsqueeze(0).detach().cpu())
             predFeatures = qBot.predictImage()
             # Evaluating feature regression network
             featLoss = F.mse_loss(predFeatures, gtFeatures)
-            featLossAll[round + 1].append(torch.mean(featLoss))
+            featLossAll[round + 1].append(torch.mean(featLoss).detach().cpu().unsqueeze(0))
             # Keeping predictions
-            roundwiseFeaturePreds[round + 1].append(predFeatures)
+            roundwiseFeaturePreds[round + 1].append(predFeatures.detach().cpu())
         gtImgFeatures.append(gtFeatures)
 
         end_t = timer()
@@ -120,8 +120,8 @@ def rankQBot(qBot, dataset, split, exampleLimit=None, verbose=0):
     poolSize = len(dataset)
 
     # Keeping tracking of feature regression loss and CE logprobs
-    logProbsAll = [torch.cat(lprobs, 0).mean() for lprobs in logProbsAll]
-    featLossAll = [torch.cat(floss, 0).mean() for floss in featLossAll]
+    logProbsAll = [torch.cat(lprobs, 0).mean().unsqueeze(0) for lprobs in logProbsAll]
+    featLossAll = [torch.cat(floss, 0).mean().unsqueeze(0) for floss in featLossAll]
     roundwiseLogProbs = torch.cat(logProbsAll, 0).data.cpu().numpy()
     roundwiseFeatLoss = torch.cat(featLossAll, 0).data.cpu().numpy()
     logProbsMean = roundwiseLogProbs.mean()

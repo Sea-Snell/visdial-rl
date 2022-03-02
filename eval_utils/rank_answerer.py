@@ -108,10 +108,10 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
             logProbsCurrent = aBot.forward()
             logProbsAll[round].append(
                 scoringFunction(logProbsCurrent,
-                                answers[:, round].contiguous()))
+                                answers[:, round].contiguous()).unsqueeze(0).detach().cpu())
             batchRanks = rankOptions(options[:, round],
                                      correctOptionInds[:, round], logProbs)
-            ranks.append(batchRanks)
+            ranks.append(batchRanks.detach().cpu())
 
         end_t = timer()
         delta_t = " Rate: %5.2fs" % (end_t - start_t)
@@ -125,7 +125,7 @@ def rankABot(aBot, dataset, split, scoringFunction, exampleLimit=None):
     ranks = torch.cat(ranks, 0)
     rankMetrics = metrics.computeMetrics(ranks.cpu())
 
-    logProbsAll = [torch.cat(lprobs, 0).mean() for lprobs in logProbsAll]
+    logProbsAll = [torch.cat(lprobs, 0).mean().unsqueeze(0) for lprobs in logProbsAll]
     roundwiseLogProbs = torch.cat(logProbsAll, 0).data.cpu().numpy()
     logProbsMean = roundwiseLogProbs.mean()
     rankMetrics['logProbsMean'] = logProbsMean
