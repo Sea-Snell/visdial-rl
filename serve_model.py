@@ -56,13 +56,14 @@ params, info, dataset, qBot, aBot = None, None, None, None, None
 def load_objects():
     # read the command line options
     params = options.readCommandLine()
+    split = 'val'
 
     # setup dataloader
     dlparams = params.copy()
     dlparams['useIm'] = True
     dlparams['useHistory'] = True
     dlparams['numRounds'] = 10
-    splits = ['val']
+    splits = [split]
 
     dataset = VisDialDataset(dlparams, splits)
 
@@ -133,7 +134,7 @@ def load_objects():
         int(ind): word
         for word, ind in info['word2ind'].items()
     }
-    return dataset, qBot, aBot, params, info
+    return dataset, qBot, aBot, params, info, split
 
 
 ind_map = lambda words: np.array([info['word2ind'].get(word, info['word2ind']['UNK']) 
@@ -210,8 +211,51 @@ def fetch_reward(qBot, history, img_features, caption):
             distances.append(F.mse_loss(qBot.predictImage(), img_features))
         else:
             raise NotImplementedError
-    rewards = list(map(lambda x: x[1]-x[0], zip(distances[:-1], distances[1:])))
+    if len(h_tokens) == 0:
+        return distances[0]
+    rewards = list(map(lambda x: x[0]-x[1], zip(distances[:-1], distances[1:])))
     return rewards[-1]
+
+def compute_percentile(predicted_f, true_f, negative_f):
+    true_d = F.mse_loss(predicted_f, true_f, reduction='none').sum(dim=1)
+    neg_d = F.mse_loss(predicted_f.repeat(negative_f.shape[0], 1), negative_f, reduction='none').sum(dim=1)
+    ds = torch.cat((true_d, neg_d), dim=0).detach().cpu().numpy()
+    rank = int(np.where(ds.argsort() == 0)[0]) + 1
+    pool_size = negative_f.shape[0]+1
+    p_rank = 1 - (rank / pool_size)
+    return float(p_rank)
+
+def fetch_reward_rank(qBot, negative_img_features, history, img_features, caption):
+    img_features = var_map(img_features)
+    negative_img_features = var_map(negative_img_features).squeeze(0)
+    caption_tokens = ind_map(tokenize(caption))
+    h_tokens = []
+    for item in history:
+        tokens = ind_map(tokenize(item['text']))
+        h_tokens.append((item['speaker'], tokens,))
+    caption_tensor = var_map(torch.from_numpy(caption_tokens))
+    caption_lens = var_map(torch.LongTensor([len(caption_tokens)]))
+
+    hist_tensors = [var_map(torch.from_numpy(x[1])) for x in h_tokens]
+    hist_lens = [var_map(torch.LongTensor([len(x[1])])) for x in h_tokens]
+
+    qBot.eval(), qBot.reset()
+    qBot.observe(-1, caption=caption_tensor, captionLens=caption_lens)
+    percentiles = [compute_percentile(qBot.predictImage(), img_features, negative_img_features)]
+    for i in range(len(h_tokens)):
+        round = i // 2
+        if h_tokens[i][0] == 'question':
+            qBot.observe(round, ques=hist_tensors[i], quesLens=hist_lens[i])
+            qBot.encoder.embedInputDialog()
+        elif h_tokens[i][0] == 'answer':
+            qBot.observe(round, ans=hist_tensors[i], ansLens=hist_lens[i])
+            percentiles.append(compute_percentile(qBot.predictImage(), img_features, negative_img_features))
+        else:
+            raise NotImplementedError
+    if len(h_tokens) == 0:
+        return percentiles[0]
+    rewards = list(map(lambda x: x[1]-x[0], zip(percentiles[:-1], percentiles[1:])))
+    return float(rewards[-1])
 
 def fetch_a_bot_response(aBot, history, img_features, caption, **generation_kwargs): 
     img_features = var_map(img_features)
@@ -248,13 +292,19 @@ def step(qBot, aBot, history, img_features, caption, **generation_kwargs):
     reward = fetch_reward(qBot, history, img_features, caption)
     return a_response, reward
 
+def step_rank(qBot, aBot, negative_img_features, history, img_features, caption, **generation_kwargs):
+    a_response = fetch_a_bot_response(aBot, history, img_features, caption, **generation_kwargs)
+    history += [{'speaker': 'answer', 'text': a_response}]
+    reward = fetch_reward_rank(qBot, negative_img_features, history, img_features, caption)
+    return a_response, reward
+
 def model_process():
     global qBot
     global aBot
     global params
     global info
     global dataset
-    dataset, qBot, aBot, params, info = load_objects()
+    dataset, qBot, aBot, params, info, split = load_objects()
     print('BOTS LOADED!')
     while True:
         request_id, f_name, args, kwargs = Q.get()
@@ -264,15 +314,19 @@ def model_process():
             f = partial(fetch_q_bot_response, qBot)
         elif f_name == 'fetch_reward':
             f = partial(fetch_reward, qBot)
+        elif f_name == 'fetch_reward_rank':
+            f = partial(fetch_reward_rank, qBot, dataset.data['%s_img_fv' % split])
         elif f_name == 'step':
             f = partial(step, qBot, aBot)
+        elif f_name == 'step_rank':
+            f = partial(step_rank, qBot, aBot, dataset.data['%s_img_fv' % split])
         else:
             raise NotImplementedError
         result = f(*args, **kwargs)
         r.set('result_%d' % (request_id), pkl.dumps(result))
 
 def flask_process():
-    app.run(host='0.0.0.0', port=5000, threaded=True, processes=1)
+    app.run(host='0.0.0.0', port=5001, threaded=True, processes=1)
 
 @app.route('/fetch_a_bot_response', methods=['POST'])
 def flask_fetch_a_bot_response():
@@ -327,6 +381,23 @@ def flask_fetch_reward():
     r.delete("result_%d" % (request_id))
     return json.dumps(result.item())
 
+@app.route('/fetch_reward_rank', methods=['POST'])
+def flask_fetch_reward_rank():
+    history = request.form.get('history', None)
+    img_features = request.form.get('img_features', None)
+    caption = request.form.get('caption', None)
+    history = json.loads(history)
+    img_features = torch.tensor(json.loads(img_features))
+
+    request_id = int(r.incr('request_id_counter'))
+    Q.put((request_id, 'fetch_reward_rank', (history, img_features, caption,), {},))
+    while not r.exists("result_%d" % (request_id)):
+        time.sleep(0.05)
+    
+    result = pkl.loads(r.get("result_%d" % (request_id)))
+    r.delete("result_%d" % (request_id))
+    return json.dumps(result)
+
 @app.route('/step', methods=['POST'])
 def flask_step():
     history = request.form.get('history', None)
@@ -346,6 +417,25 @@ def flask_step():
     r.delete("result_%d" % (request_id))
     return json.dumps((fix_tokenization_spaces(result[0]), result[1].item(),))
 
+@app.route('/step_rank', methods=['POST'])
+def flask_step_rank():
+    history = request.form.get('history', None)
+    img_features = request.form.get('img_features', None)
+    caption = request.form.get('caption', None)
+    generation_kwargs = request.form.get('generation_kwargs', None)
+    history = json.loads(history)
+    img_features = torch.tensor(json.loads(img_features))
+    generation_kwargs = json.loads(generation_kwargs)
+
+    request_id = int(r.incr('step'))
+    Q.put((request_id, 'step_rank', (history, img_features, caption,), generation_kwargs,))
+    while not r.exists("result_%d" % (request_id)):
+        time.sleep(0.05)
+    
+    result = pkl.loads(r.get("result_%d" % (request_id)))
+    r.delete("result_%d" % (request_id))
+    return json.dumps((fix_tokenization_spaces(result[0]), result[1],))
+
 def main():
     global Q
     Q = mp.Manager().Queue()
@@ -359,8 +449,8 @@ def test():
     global params
     global info
     global dataset
-    dataset, _, _, params, info = load_objects()
-    url = 'http://172.31.10.99:5000/'
+    dataset, _, _, params, info, _ = load_objects()
+    url = 'http://localhost:5001/'
     while True:
         item = random.choice(dataset)
         img_feat = item['img_feat'].tolist()
@@ -378,7 +468,7 @@ def test():
                                                         'generation_kwargs': json.dumps({'inference': 'greedy', 'beamSize': 1})}).text)
             print('q:', q_response)
             data.append({'speaker': 'question', 'text': q_response})
-            a_response, reward = json.loads(requests.post(url+'step', 
+            a_response, reward = json.loads(requests.post(url+'step_rank', 
                                                           data={'history': json.dumps(data), 
                                                                 'caption': caption, 
                                                                 'img_features': json.dumps(img_feat), 
@@ -389,5 +479,6 @@ def test():
         print('='*25)
 
 if __name__ == "__main__":
+    # mp.set_start_method('fork')
     main()
     # test()
