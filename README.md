@@ -1,6 +1,6 @@
 # Visual Dialogue question asking offline RL environment
 
-To serve the Visual Dialogue question asking environment used by the paper "Offline RL for Natural Language Generation with Implicit Language Q Learning", follow the steps below:
+To serve the Visual Dialogue question asking environment used by the paper ["Offline RL for Natural Language Generation with Implicit Language Q Learning"](https://sea-snell.github.io/ILQL_site/), follow the steps below:
 
 ### Setup
 1. install conda
@@ -17,5 +17,7 @@ To serve the Visual Dialogue question asking environment used by the paper "Offl
 ``` shell
 python serve_model.py -useGPU -startFrom checkpoints/abot_sl_ep60.vd -qstartFrom checkpoints/qbot_sl_ep60.vd
 ```
+
+Optionally remove the `-useGPU` flag if you don't want to serve the models on a GPU.
 
 That's it! The Visual Dialogue environment should be accessible on port 5000 on localhost.
