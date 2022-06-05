@@ -3,12 +3,14 @@
 To serve the Visual Dialogue question asking environment used by the paper "Offline RL for Natural Language Generation with Implicit Language Q Learning", follow the steps below:
 
 ### Setup
-1. install python 3.6.12
-2. create a new python environment
-3. `pip install -r requirements.txt`
-4. `sudo apt-get update`
-5. `sudo apt-get install redis`
-6. Download the zip files from the Google drive folder [here](https://drive.google.com/drive/folders/1TAgja4bF5PyAV6gA5UzEAld2Vyk_qb15?usp=sharing). Place the downloaded and unzipped files, "data" and "checkpoints", at the root of the repo.
+1. install conda
+2. conda create --name my_visdial_env python=3.6.12
+3. conda activate my_visdial_env
+4. conda install pytorch=0.4.1
+5. `pip install -r requirements.txt`
+6. `sudo apt-get update`
+7. `sudo apt-get install redis`
+8. Download the zip files from the Google drive folder [here](https://drive.google.com/drive/folders/1TAgja4bF5PyAV6gA5UzEAld2Vyk_qb15?usp=sharing). Place the downloaded and unzipped files, "data" and "checkpoints", at the root of the repo.
 
 ### Serve
 ``` shell
