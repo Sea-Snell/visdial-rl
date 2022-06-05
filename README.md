@@ -3,7 +3,7 @@
 To serve the Visual Dialogue question asking environment used by the paper "Offline RL for Natural Language Generation with Implicit Language Q Learning", follow the steps below:
 
 ### Setup
-1. install python 3.6.15
+1. install python 3.6.12
 2. create a new python environment
 3. `pip install -r requirements.txt`
 4. `sudo apt-get update`

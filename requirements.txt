@@ -9,7 +9,6 @@ contextvars==2.4
 cymem==2.0.6
 dataclasses==0.8
 Deprecated==1.2.13
-en-core-web-sm==3.2.0
 Flask==2.0.3
 Flask-Cors==3.0.10
 h5py==3.1.0
