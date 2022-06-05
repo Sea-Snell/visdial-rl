@@ -326,7 +326,7 @@ def model_process():
         r.set('result_%d' % (request_id), pkl.dumps(result))
 
 def flask_process():
-    app.run(host='0.0.0.0', port=5001, threaded=True, processes=1)
+    app.run(host='0.0.0.0', port=5000, threaded=True, processes=1)
 
 @app.route('/fetch_a_bot_response', methods=['POST'])
 def flask_fetch_a_bot_response():
